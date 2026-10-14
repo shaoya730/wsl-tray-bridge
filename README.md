@@ -1,5 +1,7 @@
 # WSL Tray Bridge
 
+<p align="center"><img src="assets/icon.png" alt="WSL Tray Bridge icon" width="128" height="128"></p>
+
 把 Linux GUI 应用的托盘图标接到 Windows 通知区域。Windows 端使用原生托盘图标和菜单；Linux 服务负责两端的启动与退出。
 
 **实验版本，已在 Windows 11 ARM64 + WSLg + Ubuntu 24.04 上验证。** 尚不保证所有 Linux 应用都能完整兼容，也未验证其他架构的完整安装流程。

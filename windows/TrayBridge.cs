@@ -34,6 +34,7 @@ internal sealed class Bridge : ApplicationContext
     [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     private readonly Form dispatch = new Form();
     private readonly NotifyIcon manager = new NotifyIcon();
+    private readonly Icon managerIcon;
     private readonly Dictionary<string, TrayEntry> entries = new Dictionary<string, TrayEntry>();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 };
     private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
@@ -75,7 +76,10 @@ internal sealed class Bridge : ApplicationContext
         controls.Items.Add("Open logs", null, delegate { Process.Start("explorer.exe", directory); });
         controls.Items.Add(new ToolStripSeparator());
         controls.Items.Add("Exit bridge (keep Linux apps running)", null, delegate { ExitThread(); });
-        manager.Icon = SystemIcons.Application;
+        using (Stream icon = typeof(Bridge).Assembly.GetManifestResourceStream("icon.ico"))
+        using (Icon source = new Icon(icon, SystemInformation.SmallIconSize))
+            managerIcon = (Icon)source.Clone();
+        manager.Icon = managerIcon;
         manager.Text = "WSL Tray Bridge";
         manager.ContextMenuStrip = controls;
         manager.Visible = true;
@@ -343,7 +347,7 @@ internal sealed class Bridge : ApplicationContext
         }
         connected = false;
         ClearEntries(); WriteState(); manager.Visible = false; manager.Dispose();
-        dispatch.Dispose(); timer.Dispose(); Log("Bridge stopped");
+        managerIcon.Dispose(); dispatch.Dispose(); timer.Dispose(); Log("Bridge stopped");
         base.ExitThreadCore();
     }
     private static string Text(Dictionary<string, object> data, string key, string fallback)

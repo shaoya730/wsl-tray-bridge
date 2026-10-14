@@ -48,6 +48,7 @@ if (-not (Test-Path -LiteralPath $taskWslg)) { throw 'Cannot locate WSLg; Linux 
 $taskShortcut.TargetPath = $taskWslg
 $taskShortcut.Arguments = '-d ' + $Distro + ' -- /usr/bin/systemctl --user start wsl-tray-bridge.service'
 $taskShortcut.WorkingDirectory = $taskInstall
+$taskShortcut.IconLocation = (Join-Path $taskInstall 'WSLTrayBridge.exe') + ',0'
 $taskShortcut.Description = 'Start Linux-managed tray integration'
 $taskShortcut.Save()
 foreach ($taskFolder in @($taskPrograms, [Environment]::GetFolderPath('Desktop'))) {
