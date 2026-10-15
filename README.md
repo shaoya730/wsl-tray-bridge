@@ -51,6 +51,8 @@ journalctl --user -u wsl-tray-bridge.service
 
 Windows 新托盘图标可能出现在右下角 **隐藏图标（∧）** 中，可手动拖到通知区域。左键激活应用，中键转发备用动作，右键打开菜单。桥接管理图标的 **Exit bridge** 会退出桥接，保留其他 Linux 应用。
 
+管理图标右键菜单的 **Exit bridge and stop Ubuntu...**（名称随配置的发行版变化）会先弹出确认，再退出桥接并执行 `wsl.exe --terminate <发行版>`。这会停止该发行版中的全部应用、终端和后台服务，请先保存工作。它只停止当前配置的发行版；不是关闭所有发行版和 WSL 虚拟机的 `wsl --shutdown`。独立的 Windows 辅助进程会等托盘清理完毕再执行命令；若关闭失败会显示错误。
+
 应用先于桥接启动时通常能重新注册；没有出现图标的应用可完全退出后重新打开。应用本身必须提供托盘功能。
 
 ### 生命周期
@@ -97,6 +99,7 @@ Linux 的 `systemd --user` 服务启动 `lifecycle.py`，再由它启动 Windows
 - `windows/TrayBridge.cs`：.NET Framework/WinForms 原生托盘端。
 - `scripts/configure_linux.py`：安装 Linux 文件、提取可选代理、启用用户服务。
 - `tests/integration_fixture.py`：生成临时 SNI 与旧式 X11 测试托盘，需要图形会话和 D-Bus；不是无界面单元测试。
+- `tests/test_shutdown.ps1`：验证关闭命令、退出顺序和失败分支，使用替代执行器，不会关闭实际 WSL。
 
 Windows 构建使用系统自带的 Windows PowerShell 5.1 和 .NET Framework 编译器，不要求额外安装 .NET SDK。PowerShell 7 调用构建脚本时会转交给 Windows PowerShell。
 

@@ -76,6 +76,7 @@ internal sealed class Bridge : ApplicationContext
         controls.Items.Add("Open logs", null, delegate { Process.Start("explorer.exe", directory); });
         controls.Items.Add(new ToolStripSeparator());
         controls.Items.Add("Exit bridge (keep Linux apps running)", null, delegate { ExitThread(); });
+        controls.Items.Add("Exit bridge and stop " + distro + "...", null, delegate { StopDistro(); });
         using (Stream icon = typeof(Bridge).Assembly.GetManifestResourceStream("icon.ico"))
         using (Icon source = new Icon(icon, SystemInformation.SmallIconSize))
             managerIcon = (Icon)source.Clone();
@@ -94,6 +95,34 @@ internal sealed class Bridge : ApplicationContext
         Log("Bridge started; mode=Linux-managed");
         WriteState();
         ReadLinuxTransport();
+    }
+
+    private void StopDistro()
+    {
+        string message = "Stop " + distro + " and exit the bridge?\n\nAll applications, terminals and background services in this distribution will be stopped. Save your work before continuing.";
+        if (MessageBox.Show(message, "WSL Tray Bridge", MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+        try
+        {
+            // A separate Windows process survives the Linux pipe and UI closing.
+            WslShutdown.TerminationCommand(distro);
+            ProcessStartInfo helper = new ProcessStartInfo(Application.ExecutablePath,
+                "--stop-distro " + Quote(distro) + " " + Process.GetCurrentProcess().Id);
+            helper.UseShellExecute = true;
+            helper.WindowStyle = ProcessWindowStyle.Hidden;
+            using (Process process = Process.Start(helper))
+            {
+                if (process == null) throw new InvalidOperationException("Could not start the shutdown helper.");
+            }
+            Log("User requested stop of distribution: " + distro);
+            ExitThread();
+        }
+        catch (Exception error)
+        {
+            Log("Stop distribution: " + error);
+            MessageBox.Show("Could not stop " + distro + ":\n" + error.Message,
+                "WSL Tray Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ReadLinuxTransport()
@@ -361,11 +390,80 @@ internal sealed class Bridge : ApplicationContext
     private static string Quote(string value) { return "\"" + value.Replace("\"", "\\\"") + "\""; }
 }
 
+internal static class WslShutdown
+{
+    internal static ProcessStartInfo TerminationCommand(string distro)
+    {
+        if (String.IsNullOrEmpty(distro) || !Regex.IsMatch(distro, @"\A[A-Za-z0-9][A-Za-z0-9_.-]*\z"))
+            throw new ArgumentException("Unsupported distro name");
+        ProcessStartInfo command = new ProcessStartInfo(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe"),
+            "--terminate \"" + distro + "\"");
+        command.UseShellExecute = false;
+        command.CreateNoWindow = true;
+        command.RedirectStandardOutput = true;
+        command.RedirectStandardError = true;
+        return command;
+    }
+
+    internal static void TerminateAfterExit(string distro, Func<bool> waitForBridge, Func<ProcessStartInfo, int> execute)
+    {
+        ProcessStartInfo command = TerminationCommand(distro);
+        if (!waitForBridge()) throw new TimeoutException("The bridge did not exit. The distribution was left running.");
+        int result = execute(command);
+        if (result != 0) throw new InvalidOperationException("wsl.exe --terminate failed (exit code " + result + ").");
+    }
+
+    internal static void Run(string distro, int bridgePid)
+    {
+        if (bridgePid <= 0 || bridgePid == Process.GetCurrentProcess().Id)
+            throw new ArgumentException("Invalid bridge process ID");
+        TerminateAfterExit(distro, delegate
+        {
+            try { using (Process bridge = Process.GetProcessById(bridgePid)) return bridge.WaitForExit(15000); }
+            catch (ArgumentException) { return true; } // The UI has already exited.
+        }, delegate(ProcessStartInfo command)
+        {
+            using (Process process = Process.Start(command))
+            {
+                var output = process.StandardOutput.ReadToEndAsync();
+                var error = process.StandardError.ReadToEndAsync();
+                if (!process.WaitForExit(30000))
+                {
+                    process.Kill();
+                    throw new TimeoutException("WSL did not finish stopping within 30 seconds. Check its status in Windows Terminal.");
+                }
+                System.Threading.Tasks.Task.WaitAll(output, error);
+                if (process.ExitCode != 0)
+                    throw new InvalidOperationException("WSL could not stop the distribution:\n" + output.Result + error.Result);
+                return process.ExitCode;
+            }
+        });
+    }
+}
+
 internal static class Program
 {
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--stop-distro")
+        {
+            try
+            {
+                int bridgePid;
+                if (args.Length != 3 || !Int32.TryParse(args[2], out bridgePid))
+                    throw new ArgumentException("Invalid shutdown helper arguments");
+                WslShutdown.Run(args[1], bridgePid);
+            }
+            catch (Exception error)
+            {
+                Environment.ExitCode = 1;
+                MessageBox.Show(error.Message + "\n\nThe distribution may still be running.",
+                    "WSL Tray Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return;
+        }
         if (Array.IndexOf(args, "--stdio") < 0)
         {
             // A manual launch starts the Linux service and returns; there is no Windows watcher.
